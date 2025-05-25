@@ -10,12 +10,25 @@ otelcol.receiver.otlp "default" {
 
   output {
       metrics = [otelcol.exporter.debug.default.input]
-      // logs    = [otelcol.exporter.debug.default.input]
+      logs    = [otelcol.processor.batch.default.input]
       traces  = [otelcol.exporter.debug.default.input]
   }
 }
 
 otelcol.exporter.debug "default" {}
+
+// https://grafana.com/docs/alloy/latest/reference/components/otelcol.processor.batch/
+otelcol.processor.batch "default" {
+    output {
+        logs = [otelcol.exporter.otlphttp.default.input]
+    }
+}
+
+otelcol.exporter.otlphttp "default" {
+  client {
+    endpoint = sys.env("PROVISIONING_OTEL_EXPORTER_LOKI_URL") + "/otlp"
+  }
+}
 
 livedebugging {
   enabled = true
