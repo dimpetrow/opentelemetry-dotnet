@@ -2,8 +2,10 @@
 
 using System.Diagnostics.Metrics;
 using System.Diagnostics;
-
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using OpenTelemetry;
+using OpenTelemetry.Exporter;
 using OpenTelemetry.Logs;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
@@ -22,97 +24,60 @@ public class Program
         /etc/alloy/config.alloy
      */
     
-    private static readonly Meter MyMeter = new("MyCompany.MyProduct.MyLibrary", "1.0");
-    private static readonly Counter<long> MyFruitCounter = MyMeter.CreateCounter<long>("MyFruitCounter");
-    private static readonly Gauge<long> MyHeightCounter = MyMeter.CreateGauge<long>("MyHeightCounter");
+    public static async Task Main()
+    {
+        var builder = Host.CreateApplicationBuilder();
 
+        builder.Services.AddOpenTelemetry()
+            .WithMetrics(metrics =>
+            {
+                // metrics.AddOtlpExporter(opt => opt.BatchExportProcessorOptions.)
+                metrics.AddMeter("MyCompany.MyProduct.MyLibrary");
+            })
+            .WithTracing(tracing =>
+            {
+                tracing.AddSource("MyCompany.MyProduct.MyLibrary");
+            })
+            .UseOtlpExporter();
+
+        builder.Services.AddHostedService<Signals>();
+        
+        var app = builder.Build();
+        await app.RunAsync();
+    }
+}
+
+public class Signals : BackgroundService
+{
+    private readonly ILogger<Signals> _logger;
+    
+    private readonly Counter<long> _myFruitCounter;
+    private readonly Gauge<long> _myHeightCounter;
+    
     private static readonly ActivitySource MyActivitySource = new("MyCompany.MyProduct.MyLibrary");
 
-    public static void Main()
+    public Signals(
+        ILogger<Signals> logger,
+        IMeterFactory meterFactory)
     {
-        Console.WriteLine("start");
+        _logger = logger;
         
+        var meter = meterFactory.Create("MyCompany.MyProduct.MyLibrary", "1.0");
+        _myFruitCounter = meter.CreateCounter<long>("MyFruitCounter");
+        _myHeightCounter = meter.CreateGauge<long>("MyHeightCounter");
+    }
+    
+    protected override Task ExecuteAsync(CancellationToken stoppingToken)
+    {
         SignalLogs();
         SignalMetrics();
         SignalTraces();
-        
-        Console.WriteLine("end");
-    }
 
-    private static void SignalLogs()
-    {
-        var loggerFactory = LoggerFactory.Create(builder =>
-        {
-            builder.AddOpenTelemetry(logging =>
-                {
-                    logging.AddOtlpExporter((exporterOptions) =>
-                    {
-                        exporterOptions.Endpoint = new Uri("http://localhost:4317");
-                    });
-                    // logging.AddConsoleExporter();
-                });
-        });
-        
-        var logger = loggerFactory.CreateLogger<Program>();
-
-        // trigger signals
-        logger.FoodPriceChanged("artichoke", 9.99);
-        
-        logger.FoodRecallNotice(
-            brandName: "Contoso",
-            productDescription: "Salads",
-            productType: "Food & Beverages",
-            recallReasonDescription: "due to a possible health risk from Listeria monocytogenes",
-            companyName: "Contoso Fresh Vegetables, Inc.");
-
-        // Dispose logger factory before the application ends.
-        // This will flush the remaining logs and shutdown the logging pipeline.
-        loggerFactory.Dispose();
-    }
-
-    private static void SignalMetrics()
-    {
-        var meterProvider = Sdk.CreateMeterProviderBuilder()
-            .AddMeter("MyCompany.MyProduct.MyLibrary")
-            .AddOtlpExporter((exporterOptions) =>
-            {
-                exporterOptions.Endpoint = new Uri("http://localhost:4317");
-            })
-            // .AddConsoleExporter()
-            .Build();
-
-        // In this example, we have low cardinality which is below the 2000
-        // default limit. If you have high cardinality, you need to set the
-        // cardinality limit properly.
-        MyFruitCounter.Add(1, new("name", "apple"), new("color", "red"));
-        MyFruitCounter.Add(2, new("name", "lemon"), new("color", "yellow"));
-        MyFruitCounter.Add(1, new("name", "lemon"), new("color", "yellow"));
-        MyFruitCounter.Add(2, new("name", "apple"), new("color", "green"));
-        MyFruitCounter.Add(5, new("name", "apple"), new("color", "red"));
-        MyFruitCounter.Add(4, new("name", "lemon"), new("color", "yellow"));
-        
-        MyHeightCounter.Record(178, new ("name", "John"), new("age", "18"));
-        MyHeightCounter.Record(156, new ("name", "Susan"), new("age", "20"));
-        MyHeightCounter.Record(157, new ("name", "Susan"), new("age", "20"));
-        MyHeightCounter.Record(177, new ("name", "John"), new("age", "18"));
-        MyHeightCounter.Record(159, new ("name", "Susan"), new("age", "20"));
-        
-        // Dispose meter provider before the application ends.
-        // This will flush the remaining metrics and shutdown the metrics pipeline.
-        meterProvider.Dispose();
+        return Task.CompletedTask;
     }
 
     private static void SignalTraces()
     {
-        var tracerProvider = Sdk.CreateTracerProviderBuilder()
-            .AddSource("MyCompany.MyProduct.MyLibrary")
-            .AddOtlpExporter((exporterOptions) =>
-            {
-                exporterOptions.Endpoint = new Uri("http://localhost:4317");
-            })
-            // .AddConsoleExporter()
-            .Build();
-
         using (var activity = MyActivitySource.StartActivity("SayHello", ActivityKind.Client))
         {
             activity?.SetTag("foo", 1);
@@ -120,13 +85,36 @@ public class Program
             activity?.SetTag("baz", new int[] { 1, 2, 3 });
             activity?.SetStatus(ActivityStatusCode.Ok);
         }
+    }
+
+    private void SignalMetrics()
+    {
+        _myFruitCounter.Add(1, new("name", "apple"), new("color", "red"));
+        _myFruitCounter.Add(2, new("name", "lemon"), new("color", "yellow"));
+        _myFruitCounter.Add(1, new("name", "lemon"), new("color", "yellow"));
+        _myFruitCounter.Add(2, new("name", "apple"), new("color", "green"));
+        _myFruitCounter.Add(5, new("name", "apple"), new("color", "red"));
+        _myFruitCounter.Add(4, new("name", "lemon"), new("color", "yellow"));
         
-        // Dispose tracer provider before the application ends.
-        // This will flush the remaining spans and shutdown the tracing pipeline.
-        tracerProvider.Dispose();
+        _myHeightCounter.Record(178, new ("name", "John"), new("age", "18"));
+        _myHeightCounter.Record(156, new ("name", "Susan"), new("age", "20"));
+        _myHeightCounter.Record(157, new ("name", "Susan"), new("age", "20"));
+        _myHeightCounter.Record(177, new ("name", "John"), new("age", "18"));
+        _myHeightCounter.Record(159, new ("name", "Susan"), new("age", "20"));
+    }
+
+    private void SignalLogs()
+    {
+        _logger.FoodPriceChanged("artichoke", 9.99);
+
+        _logger.FoodRecallNotice(
+            brandName: "Contoso",
+            productDescription: "Salads",
+            productType: "Food & Beverages",
+            recallReasonDescription: "due to a possible health risk from Listeria monocytogenes",
+            companyName: "Contoso Fresh Vegetables, Inc.");
     }
 }
-
 
 internal static partial class LoggerExtensions
 {

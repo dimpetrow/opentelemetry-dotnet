@@ -10,7 +10,7 @@ otelcol.receiver.otlp "default" {
 
   output {
       metrics = [otelcol.exporter.debug.default.input]
-      logs    = [otelcol.exporter.debug.default.input]
+      // logs    = [otelcol.exporter.debug.default.input]
       traces  = [otelcol.exporter.debug.default.input]
   }
 }
