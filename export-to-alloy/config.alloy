@@ -1,0 +1,22 @@
+logging {
+  level  = "info"
+  format = "logfmt"
+}
+
+// https://grafana.com/docs/alloy/latest/reference/components/otelcol/otelcol.receiver.otlp/
+otelcol.receiver.otlp "default" {
+  http {}
+  grpc {}
+
+  output {
+      metrics = [otelcol.exporter.debug.default.input]
+      logs    = [otelcol.exporter.debug.default.input]
+      traces  = [otelcol.exporter.debug.default.input]
+  }
+}
+
+otelcol.exporter.debug "default" {}
+
+livedebugging {
+  enabled = true
+}
