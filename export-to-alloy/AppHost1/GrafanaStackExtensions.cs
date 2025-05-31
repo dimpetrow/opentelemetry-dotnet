@@ -1,6 +1,4 @@
-﻿using Microsoft.AspNetCore.Builder;
-
-namespace AppHost1;
+﻿namespace AppHost1;
 
 public record CollectorResourceAndEndpoint(
     IResourceBuilder<ContainerResource> Collector,
@@ -22,9 +20,9 @@ public static class GrafanaStackExtensions
     }
     
     public static IResourceBuilder<ProjectResource> WithTelemetryConfiguration(
-        this IResourceBuilder<ProjectResource> resource,
+        this IResourceBuilder<ProjectResource> project,
         IResourceBuilder<ParameterResource> exportTelemetryToAlloyParam) =>
-        resource.WithEnvironment("EXPORT_TELEMETRY_TO_ALLOY", exportTelemetryToAlloyParam);
+        project.WithEnvironment("EXPORT_TELEMETRY_TO_ALLOY", exportTelemetryToAlloyParam);
 
     public static CollectorResourceAndEndpoint AddGrafanaStack(this IDistributedApplicationBuilder builder)
     {
@@ -46,8 +44,8 @@ public static class GrafanaStackExtensions
                 .WithBindMount(Path.Combine(bindMountPath, "tempo/tempo.yaml"), "/etc/tempo.yaml")
                 .WithBindMount(Path.Combine(bindMountPath, "tempo/bindmountstorage"), "/var/tempo")
                 .WithHttpEndpoint(3200, 3200, tracesServerEndpointName)
-                .WithHttpEndpoint(/*24317, */targetPort: 4317, name: tracesReceiverGrpcEndpointName)
-                .WithHttpEndpoint(/*24318, */targetPort: 4318, name: tracesReceiverHttpEndpointName)
+                .WithHttpEndpoint(targetPort: 4317, name: tracesReceiverGrpcEndpointName)
+                .WithHttpEndpoint(targetPort: 4318, name: tracesReceiverHttpEndpointName)
                 .WithArgs("-config.file=/etc/tempo.yaml", "-config.expand-env=true")
             ;
         var tracesReceiverHttpEndpointReference = traces.GetEndpoint(tracesReceiverHttpEndpointName);
@@ -75,7 +73,6 @@ public static class GrafanaStackExtensions
         // var collectorEndpointHttpName = "http";
         var collector = builder.AddContainer("collector", "grafana/alloy")
                 .WithBindMount(Path.Combine(bindMountPath, "alloy/config.alloy"), "/etc/alloy/config.alloy")
-                // .WithBindMount("C:/repos/explore/opentelemetry-dotnet/export-to-alloy/tmp/log", "/tmp/app-logs/")
                 .WithHttpEndpoint(12345, 12345, name: "ui")
                 .WithHttpEndpoint(4317, 4317, name: collectorEndpointGrpcName) // gRPC
                 // .WithHttpEndpoint(4318, 4318, name: collectorEndpointHttpName) // HTTP
@@ -96,23 +93,23 @@ public static class GrafanaStackExtensions
     }
     
     public static IResourceBuilder<ProjectResource> WithCollectorReferenceAndScrapeEndpoint(
-        this IResourceBuilder<ProjectResource> resource,
+        this IResourceBuilder<ProjectResource> project,
         CollectorResourceAndEndpoint collectorResourceAndEndpoint)
     {
         var (collector, endpointReference) = collectorResourceAndEndpoint;
-        resource
+        project
             .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", endpointReference)
             .WithReference(endpointReference).WaitFor(collector);
     
-        var scrapeEndpoint = resource.GetScrapeEndpoint();
+        var scrapeEndpoint = project.GetScrapeEndpoint();
         collector.WithEnvironment("PROVISIONING_PROM_SCRAPE_WEB_URL", scrapeEndpoint);
 
-        return resource;
+        return project;
     }
     
-    private static ReferenceExpression GetScrapeEndpoint(this IResourceBuilder<ProjectResource> resourceToScrape)
+    private static ReferenceExpression GetScrapeEndpoint(this IResourceBuilder<ProjectResource> projectToScrape)
     {
-        var webEndpointReference = resourceToScrape.GetEndpoint("http");
+        var webEndpointReference = projectToScrape.GetEndpoint("http");
         // https://github.com/dotnet/aspire/discussions/8300#discussioncomment-12623405 -- extremely useful in cases where the default generated url passed via ENVVars is not what the resource expects
         // the example here is for Alloy to scrape metrics with prometheus.scrape it expects addresses to be without the scheme
         var referenceExpression = ReferenceExpression.Create(
