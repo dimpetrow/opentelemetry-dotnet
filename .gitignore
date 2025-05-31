@@ -485,4 +485,6 @@ $RECYCLE.BIN/
 
 
 export-to-alloy/observability/grafana/bindmountstorage/
+export-to-alloy/observability/loki/bindmountstorage/
 export-to-alloy/observability/tempo/bindmountstorage/
+export-to-alloy/observability/prometheus/bindmountstorage/

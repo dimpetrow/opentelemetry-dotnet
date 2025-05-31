@@ -3,27 +3,44 @@ logging {
   format = "logfmt"
 }
 
+// // // // 1. Receive or Scrape
+
 // https://grafana.com/docs/alloy/latest/reference/components/otelcol/otelcol.receiver.otlp/
 otelcol.receiver.otlp "default" {
   http {}
   grpc {}
 
   output {
-      metrics = [otelcol.exporter.debug.default.input]
+      // metrics = [otelcol.exporter.debug.default.input]
       logs    = [otelcol.processor.batch.default.input]
       traces  = [otelcol.processor.batch.default.input]
   }
 }
 
-otelcol.exporter.debug "default" {}
+prometheus.scrape "default" {
+  // Collect metrics from the default listen address.
+  targets = [{
+    __address__ = sys.env("PROVISIONING_PROM_SCRAPE_WEB_URL"), // "{hostname}:{port}", // no scheme! error otherwise
+  }]
+
+  forward_to = [prometheus.remote_write.default.receiver]
+  // forward_to = [otelcol.processor.batch.default.input]
+
+  scrape_interval = "15s"
+}
+
+// // // // 2. Any local processing
 
 // https://grafana.com/docs/alloy/latest/reference/components/otelcol.processor.batch/
 otelcol.processor.batch "default" {
     output {
+        // metrics = [otelcol.exporter.debug.default.input]
         logs =   [otelcol.exporter.otlphttp.logs.input]
         traces = [otelcol.exporter.otlphttp.traces.input]
     }
 }
+
+// // // // 3. Export to destinations
 
 otelcol.exporter.otlphttp "logs" {
   client {
@@ -37,6 +54,16 @@ otelcol.exporter.otlphttp "traces" {
   }
 }
 
+prometheus.remote_write "default" {
+  endpoint {
+    // Docs say remote write is at this addess https://prometheus.io/docs/prometheus/latest/storage/#overview
+    // https://prometheus.io/docs/prometheus/latest/querying/api/#remote-write-receiver
+    // Alloy docs have wrong address /api/prom/push https://grafana.com/docs/alloy/latest/collect/prometheus-metrics/#collect-metrics-from-custom-targets
+    url = sys.env("PROVISIONING_PROM_REMOTEWRITE_URL") + "/api/v1/write"
+  }
+}
+
 livedebugging {
   enabled = true
 }
+otelcol.exporter.debug "default" {}

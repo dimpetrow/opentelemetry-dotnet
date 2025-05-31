@@ -1,86 +1,20 @@
-using System.Net.Sockets;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using Projects;
+using AppHost1;
 
 var builder = DistributedApplication.CreateBuilder(args);
 
-// var debugView = (builder.Configuration as IConfigurationRoot).GetDebugView();
-//
-// Console.WriteLine(debugView);
+var (
+    exportTelemetryToAlloyParam,
+    exportTelemetryToAlloy
+) = builder.GetTelemetryConfiguration();
 
-var logsEndpointName = "http"; 
-var logs = builder.AddContainer("logs", "grafana/loki")
-    .WithBindMount("C:/repos/explore/opentelemetry-dotnet/export-to-alloy/observability/loki/loki-config.yaml",
-        "/etc/loki/local-config.yaml")
-    .WithHttpEndpoint(3100, 3100, logsEndpointName)
-    .WithArgs("-config.file=/etc/loki/local-config.yaml")
-    ;
-var logsEndpointReference = logs.GetEndpoint(logsEndpointName);
+var web = builder.AddProject<Projects.SignalsGeneratorWeb>("web")
+    .WithTelemetryConfiguration(exportTelemetryToAlloyParam);
 
-
-var tracesServerEndpointName = "server"; 
-var tracesReceiverGrpcEndpointName = "grpc";
-var tracesReceiverHttpEndpointName = "http";
-var traces = builder.AddContainer("traces", "grafana/tempo")
-    .WithBindMount("C:/repos/explore/opentelemetry-dotnet/export-to-alloy/observability/tempo/tempo.yaml",
-        "/etc/tempo.yaml")
-    .WithBindMount("C:/repos/explore/opentelemetry-dotnet/export-to-alloy/observability/tempo/bindmountstorage",
-        "/var/tempo")
-    .WithHttpEndpoint(3200, 3200, tracesServerEndpointName)
-    .WithHttpEndpoint(/*24317, */targetPort: 4317, name: tracesReceiverGrpcEndpointName)
-    .WithHttpEndpoint(/*24318, */targetPort: 4318, name: tracesReceiverHttpEndpointName)
-    .WithArgs("-config.file=/etc/tempo.yaml", "-config.expand-env=true")
-    ;
-var tracesReceiverHttpEndpointReference = traces.GetEndpoint(tracesReceiverHttpEndpointName);
-var tracesServerEndpointReference = traces.GetEndpoint(tracesServerEndpointName);
-
-builder.AddContainer("grafana", "grafana/grafana-enterprise")
-    .WithEnvironment("PROVISIONING_DATASOURCES_LOKI_URL", logsEndpointReference)
-    .WithEnvironment("PROVISIONING_DATASOURCES_TEMPO_URL", tracesServerEndpointReference)
-    .WithBindMount("C:/repos/explore/opentelemetry-dotnet/export-to-alloy/observability/grafana/bindmountstorage", "/var/lib/grafana")
-    .WithBindMount("C:/repos/explore/opentelemetry-dotnet/export-to-alloy/observability/grafana/provisioning", "/etc/grafana/provisioning")
-    .WithHttpEndpoint(23001, 3000)
-    ;
-
-var collectorEndpointGrpcName = "grpc";
-// var collectorEndpointHttpName = "http";
-var collector = builder.AddContainer("collector", "grafana/alloy")
-    .WithBindMount("C:/repos/explore/opentelemetry-dotnet/export-to-alloy/observability/alloy/config.alloy", "/etc/alloy/config.alloy")
-    // .WithBindMount("C:/repos/explore/opentelemetry-dotnet/export-to-alloy/tmp/log", "/tmp/app-logs/")
-    .WithHttpEndpoint(12345, 12345, name: "ui")
-    .WithHttpEndpoint(4317, 4317, name: collectorEndpointGrpcName) // gRPC
-    // .WithHttpEndpoint(4318, 4318, name: collectorEndpointHttpName) // HTTP
-    .WithArgs(
-        "run", 
-        "--server.http.listen-addr=0.0.0.0:12345", 
-        "--storage.path=/var/lib/alloy/data", 
-        "--stability.level", "experimental",
-        "/etc/alloy/config.alloy"
-    )
-    .WithEnvironment("PROVISIONING_OTEL_EXPORTER_LOKI_URL", logsEndpointReference)
-    .WithEnvironment("PROVISIONING_OTEL_EXPORTER_TEMPO_URL", tracesReceiverHttpEndpointReference /*tracesReceiverGrpcEndpointReference*/)
-    ;
-var collectorEndpointReferenceName = collectorEndpointGrpcName;
-var collectorEndpointReference = collector.GetEndpoint(collectorEndpointReferenceName);
-
-builder.AddProject<Projects.SignalsGeneratorWeb>("web")
-    .WithReference(collectorEndpointReference)
-    .WithEnvironment(envCtx =>
-    {
-        // var collectorEndpointKey = $"services__collector__{collectorEndpointReferenceName}__0";
-        // var collectorEndpoint = envCtx.EnvironmentVariables.TryGetValue(collectorEndpointKey, out var url)
-        //     ? url
-        //     : throw new Exception(collectorEndpointKey);
-        // envCtx.EnvironmentVariables["OTEL_EXPORTER_OTLP_ENDPOINT"] = collectorEndpoint;
-        envCtx.EnvironmentVariables["OTEL_EXPORTER_OTLP_ENDPOINT"] = collectorEndpointReference;
-        
-        // envCtx.EnvironmentVariables["OTEL_EXPORTER_OTLP_PROTOCOL"] = "http/json";
-        var ok = envCtx.EnvironmentVariables.Remove("OTEL_EXPORTER_OTLP_HEADERS");
-
-        var logger = envCtx.ExecutionContext.ServiceProvider.GetRequiredService<ILogger<AppHost1>>();
-        logger.LogInformation("OTELHeaders removed: {ok}", ok);
-    })
-    ;
+if (exportTelemetryToAlloy)
+{
+    var collectorResource = builder.AddGrafanaStack();
+    web.WithCollectorReferenceAndScrapeEndpoint(collectorResource);
+}
 
 builder.Build().Run();
+
