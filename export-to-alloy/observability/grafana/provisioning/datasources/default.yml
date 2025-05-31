@@ -9,8 +9,8 @@ datasources:
 # https://grafana.com/docs/tempo/latest/setup/
 # https://github.com/grafana/tempo/tree/main/example/docker-compose
 # https://github.com/grafana/tempo/blob/main/example/docker-compose/shared/tempo.yaml
-# - name: Tempo # TODOCont: Proceed with Tempo and Prom
-#   type: tempo
-#   access: proxy
-#   basicAuth: false
-#   url: http://localhost:3200
+- name: Tempo
+  type: tempo
+  access: proxy
+  basicAuth: false
+  url: $PROVISIONING_DATASOURCES_TEMPO_URL

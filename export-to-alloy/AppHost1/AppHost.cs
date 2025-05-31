@@ -13,20 +13,34 @@ var logsEndpointName = "http";
 var logs = builder.AddContainer("logs", "grafana/loki")
     .WithBindMount("C:/repos/explore/opentelemetry-dotnet/export-to-alloy/observability/loki/loki-config.yaml",
         "/etc/loki/local-config.yaml")
-    .WithArgs("-config.file=/etc/loki/local-config.yaml")
     .WithHttpEndpoint(3100, 3100, logsEndpointName)
+    .WithArgs("-config.file=/etc/loki/local-config.yaml")
     ;
 var logsEndpointReference = logs.GetEndpoint(logsEndpointName);
 
+
+var tracesServerEndpointName = "server"; 
+var tracesReceiverGrpcEndpointName = "grpc";
+var tracesReceiverHttpEndpointName = "http";
+var traces = builder.AddContainer("traces", "grafana/tempo")
+    .WithBindMount("C:/repos/explore/opentelemetry-dotnet/export-to-alloy/observability/tempo/tempo.yaml",
+        "/etc/tempo.yaml")
+    .WithBindMount("C:/repos/explore/opentelemetry-dotnet/export-to-alloy/observability/tempo/bindmountstorage",
+        "/var/tempo")
+    .WithHttpEndpoint(3200, 3200, tracesServerEndpointName)
+    .WithHttpEndpoint(/*24317, */targetPort: 4317, name: tracesReceiverGrpcEndpointName)
+    .WithHttpEndpoint(/*24318, */targetPort: 4318, name: tracesReceiverHttpEndpointName)
+    .WithArgs("-config.file=/etc/tempo.yaml", "-config.expand-env=true")
+    ;
+var tracesReceiverHttpEndpointReference = traces.GetEndpoint(tracesReceiverHttpEndpointName);
+var tracesServerEndpointReference = traces.GetEndpoint(tracesServerEndpointName);
+
 builder.AddContainer("grafana", "grafana/grafana-enterprise")
-        .WithEnvironment("PROVISIONING_DATASOURCES_LOKI_URL", logsEndpointReference)
-        // .WithEnvironment("GF_PATHS_CONFIG", "/auth.ini")
-        // .WithEnvironment("GF_FEATURE_TOGGLES_ENABLE", "accessControlOnCall")
-        // .WithEnvironment("GF_INSTALL_PLUGINS", "https://storage.googleapis.com/integration-artifacts/grafana-lokiexplore-app/grafana-lokiexplore-app-latest.zip;grafana-lokiexplore-app")
-        .WithBindMount("C:/repos/explore/opentelemetry-dotnet/export-to-alloy/observability/grafana/bindmountstorage", "/var/lib/grafana")
-        .WithBindMount("C:/repos/explore/opentelemetry-dotnet/export-to-alloy/observability/grafana/provisioning", "/etc/grafana/provisioning")
-        // .WithBindMount("C:/repos/explore/opentelemetry-dotnet/export-to-alloy/grafana/auth.ini", "/auth.ini")
-        .WithHttpEndpoint(23001, 3000)
+    .WithEnvironment("PROVISIONING_DATASOURCES_LOKI_URL", logsEndpointReference)
+    .WithEnvironment("PROVISIONING_DATASOURCES_TEMPO_URL", tracesServerEndpointReference)
+    .WithBindMount("C:/repos/explore/opentelemetry-dotnet/export-to-alloy/observability/grafana/bindmountstorage", "/var/lib/grafana")
+    .WithBindMount("C:/repos/explore/opentelemetry-dotnet/export-to-alloy/observability/grafana/provisioning", "/etc/grafana/provisioning")
+    .WithHttpEndpoint(23001, 3000)
     ;
 
 var collectorEndpointGrpcName = "grpc";
@@ -45,6 +59,7 @@ var collector = builder.AddContainer("collector", "grafana/alloy")
         "/etc/alloy/config.alloy"
     )
     .WithEnvironment("PROVISIONING_OTEL_EXPORTER_LOKI_URL", logsEndpointReference)
+    .WithEnvironment("PROVISIONING_OTEL_EXPORTER_TEMPO_URL", tracesReceiverHttpEndpointReference /*tracesReceiverGrpcEndpointReference*/)
     ;
 var collectorEndpointReferenceName = collectorEndpointGrpcName;
 var collectorEndpointReference = collector.GetEndpoint(collectorEndpointReferenceName);

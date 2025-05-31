@@ -485,3 +485,4 @@ $RECYCLE.BIN/
 
 
 export-to-alloy/observability/grafana/bindmountstorage/
+export-to-alloy/observability/tempo/bindmountstorage/

@@ -5,6 +5,7 @@ docker run `
     -p 4317:4317 `
     -p 4318:4318 `
     -e "PROVISIONING_OTEL_EXPORTER_LOKI_URL=http://localhost:3100" `
+    -e "PROVISIONING_OTEL_EXPORTER_TEMPO_URL=http://localhost:3200" `
     -d `
     grafana/alloy:latest `
     run --server.http.listen-addr=0.0.0.0:12345 --storage.path=/var/lib/alloy/data --stability.level=experimental `
